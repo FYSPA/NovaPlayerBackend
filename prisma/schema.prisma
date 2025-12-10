@@ -1,0 +1,31 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String?   
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  spotifyId String?  @unique
+  image     String? 
+  spotifyAccessToken  String?  @db.Text // @db.Text es por si el token es muy largo
+  spotifyRefreshToken String?  @db.Text
+
+  isVerified Boolean @default(false)
+  verificationToken String?
+  verificationTokenExpiry DateTime?
+
+  resetToken String?
+  resetTokenExpiry DateTime?
+}

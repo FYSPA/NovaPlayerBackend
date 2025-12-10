@@ -1,0 +1,64 @@
+### Crear un usuario
+POST http://localhost:9000/users
+Content-Type: application/json
+
+{
+  "email": "fernandosuarezflores05@gmail.com",
+  "name": "YH",
+  "password": "1234password"
+}
+
+### Obtener todos los usuarios
+GET http://localhost:9000/users
+
+### Buscar usuario por ID (El que acabas de crear es el 1)
+GET http://localhost:9000/users/2
+
+### Actualizar el usuario 1
+PATCH http://localhost:9000/users/3
+Content-Type: application/json
+
+{
+  "name": "YH",
+  "password": "1234password"
+}
+
+### Borrar el usuario 1
+DELETE http://localhost:9000/users/6
+
+
+
+### Verificar cuenta
+POST http://localhost:9000/users/verify
+Content-Type: application/json
+
+{
+  "email": "fernandosuarezflores05@gmail.com",
+  "code": "204070"
+}
+
+### Login
+POST http://localhost:9000/auth/login
+Content-Type: application/json
+
+{
+  "email": "suarezfloresfy@ag.cbtis225.edu.mx",
+  "password": "1234password"
+}
+
+### Forgot Password
+POST http://localhost:9000/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "fernandosuarezflores05@gmail.com"
+}
+
+### Reset Password
+POST http://localhost:9000/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "78558089",
+  "newPassword": "fer"
+}
