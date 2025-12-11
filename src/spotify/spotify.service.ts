@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, HttpException, HttpStatus  } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import axios from 'axios';
 import ytSearch from 'yt-search';
@@ -6,6 +6,40 @@ import ytSearch from 'yt-search';
 @Injectable()
 export class SpotifyService {
     constructor(private prisma: PrismaService) { }
+
+    private async makeSpotifyRequest<T>(requestFn: () => Promise<T>, retries = 3): Promise<T> {
+        try {
+            return await requestFn();
+        } catch (error) {
+            if (axios.isAxiosError(error) && error.response) {
+                const status = error.response.status;
+
+                // CASO 1: RATE LIMIT (429)
+                if (status === 429 && retries > 0) {
+                    // Spotify nos dice cuánto esperar en el header 'retry-after' (en segundos)
+                    // Si no viene, asumimos 2 segundos por defecto + 1 segundo extra de seguridad
+                    const retryAfter = parseInt(error.response.headers['retry-after'] || '2', 10) + 1;
+                    
+                    console.warn(`⚠️ Spotify 429. Esperando ${retryAfter}s antes de reintentar...`);
+                    
+                    // Esperamos el tiempo que pide Spotify
+                    await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                    
+                    // Reintentamos recursivamente (bajando el contador de intentos)
+                    return this.makeSpotifyRequest(requestFn, retries - 1);
+                }
+
+                // CASO 2: TOKEN EXPIRADO (401)
+                if (status === 401) {
+                    // Aquí podrías implementar lógica de refresh token si la tuvieras
+                    throw new UnauthorizedException('Token de Spotify expirado o inválido');
+                }
+            }
+            
+            // Si no es 429 o se acabaron los intentos, lanzamos el error
+            throw error;
+        }
+    }
 
     // Función auxiliar para obtener el token del usuario desde la BD
     private async getUserToken(userId: number) {
@@ -183,17 +217,14 @@ export class SpotifyService {
     }
 
     // 9. OBTENER DETALLES DEL ARTISTA
-    async getArtist(userId: number, artistId: string) {
+    async getArtist(id: string, userId: number) {
         const token = await this.getUserToken(userId);
-        try {
-            const response = await axios.get(`https://api.spotify.com/v1/artists/${artistId}`, {
+        return this.makeSpotifyRequest(async () => {
+            const { data } = await axios.get(`https://api.spotify.com/v1/artists/${id}`, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            return response.data;
-        } catch (error) {
-            console.error(error);
-            throw new UnauthorizedException('Error cargando artista');
-        }
+            return data;
+        });
     }
 
     // 10. OBTENER TOP TRACKS DEL ARTISTA
@@ -315,24 +346,28 @@ export class SpotifyService {
     async getCurrentlyPlaying(userId: number) {
         const token = await this.getUserToken(userId);
         try {
-            const response = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
-                headers: { Authorization: `Bearer ${token}` }
+            const { data } = await axios.get('https://api.spotify.com/v1/me/player/currently-playing', {
+                headers: { Authorization: `Bearer ${token}` },
             });
-
-            // Si no hay música sonando, Spotify devuelve 204 No Content (body vacío)
-            if (response.status === 204 || !response.data || !response.data.item) {
-                return null;
-            }
-
-            return {
-                item: response.data.item,       // La canción
-                is_playing: response.data.is_playing, // Si está pausada o no
-                device_id: response.data.device?.id, // El dispositivo que suena
-                progress_ms: response.data.progress_ms
-            };
+            return data;
         } catch (error) {
-            console.error("Error obteniendo currently playing", error);
-            return null; // No lanzamos error para no romper el frontend
+            // --- CORRECCIÓN AQUÍ ---
+            if (axios.isAxiosError(error)) {
+                // Si es error 429 (Rate Limit), devolvemos null tranquilamente
+                // Esto hace que el frontend simplemente no actualice la barra por un segundo
+                if (error.response?.status === 429) {
+                    console.warn(`Spotify Rate Limit (429). Esperando...`);
+                    return null; 
+                }
+                // Si el token expiró (401), intentamos refrescarlo (si tienes esa lógica) o lanzamos error
+                if (error.response?.status === 401) {
+                    // Aquí podrías poner tu lógica de refresh token si la tienes
+                    throw new UnauthorizedException('Token de Spotify expirado');
+                }
+            }
+            // Si es otro error, lo dejamos pasar o retornamos null para que no rompa
+            console.error("Error obteniendo currently playing:", error.message);
+            return null; 
         }
     }
 
@@ -478,7 +513,6 @@ export class SpotifyService {
             const { data } = await axios.get('https://api.spotify.com/v1/me', {
                 headers: { Authorization: `Bearer ${token}` }
             });
-            console.log("Región detectada:", data.country); // Ej: MX, US, ES
             return data.country || 'US'; // Si falla, usamos US por defecto
         } catch (error) {
             return 'US';
@@ -492,7 +526,6 @@ export class SpotifyService {
         const token = await this.getUserToken(userId);
         const country = await this.getUserRegion(token);
 
-        console.log(`Buscando playlists OFICIALES para: ${country}`);
 
         try {
             // TRUCO PRO: Usamos "author:spotify" en la búsqueda.

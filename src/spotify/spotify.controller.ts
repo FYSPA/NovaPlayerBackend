@@ -65,7 +65,7 @@ export class SpotifyController {
     @UseGuards(AuthGuard('jwt'))
     @Get('artist/:id')
     async getArtist(@Req() req, @Param('id') id: string) {
-        return this.spotifyService.getArtist(req.user.userId, id);
+        return this.spotifyService.getArtist(id, req.user.userId);
     }
 
     @UseGuards(AuthGuard('jwt'))
