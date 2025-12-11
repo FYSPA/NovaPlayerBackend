@@ -262,12 +262,32 @@ export class SpotifyService {
         return { token: user.spotifyAccessToken };
     }
 
-    // 15. REPRODUCIR CANCIÓN (Play)
-    async play(userId: number, deviceId: string, uri: string) {
+    // 15. REPRODUCIR (INTELIGENTE)
+    async play(userId: number, deviceId: string, uris: string[], contextUri?: string) {
         const token = await this.getUserToken(userId);
         try {
-            await axios.put(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`,
-                { uris: [uri] },
+            let body = {};
+
+            // Lógica:
+            // 1. Si es Playlist -> Usamos Contexto + Offset (Mejor para listas largas)
+            // 2. Si es Artista/Favoritos/Search -> Usamos la lista de URIs (Spotify no soporta offset en Artistas)
+            
+            const isPlaylist = contextUri?.includes('playlist');
+
+            if (isPlaylist && uris.length === 1) {
+                // Modo Playlist: Contexto + Offset
+                body = {
+                    context_uri: contextUri,
+                    offset: { uri: uris[0] }
+                };
+            } else {
+                // Modo Lista (Artista/Favoritos/Search): Mandamos el array de canciones
+                // Spotify limita a unas 50 canciones por petición en el body, cortamos por seguridad
+                body = { uris: uris.slice(0, 50) };
+            }
+
+            await axios.put(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, 
+                body, 
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             return { success: true };

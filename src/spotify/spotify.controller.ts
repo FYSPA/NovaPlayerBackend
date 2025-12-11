@@ -100,8 +100,9 @@ export class SpotifyController {
 
     @UseGuards(AuthGuard('jwt'))
     @Put('play')
-    async play(@Req() req, @Body() body: { deviceId: string; uri: string }) {
-        return this.spotifyService.play(req.user.userId, body.deviceId, body.uri);
+    // Cambiamos 'uri: string' por 'uris: string[]'
+    async play(@Req() req, @Body() body: { deviceId: string; uris: string[]; contextUri?: string }) {
+        return this.spotifyService.play(req.user.userId, body.deviceId, body.uris, body.contextUri);
     }
 
     @UseGuards(AuthGuard('jwt'))
