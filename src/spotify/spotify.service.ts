@@ -1,11 +1,12 @@
-import { Injectable, UnauthorizedException, HttpException, HttpStatus  } from '@nestjs/common';
+import { Injectable, UnauthorizedException, HttpException, HttpStatus, InternalServerErrorException  } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import axios from 'axios';
 import ytSearch from 'yt-search';
-
 @Injectable()
 export class SpotifyService {
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService
+    ) { }
 
     private async makeSpotifyRequest<T>(requestFn: () => Promise<T>, retries = 3): Promise<T> {
         try {
@@ -293,29 +294,31 @@ export class SpotifyService {
         return { token: user.spotifyAccessToken };
     }
 
-    // 15. REPRODUCIR (INTELIGENTE)
+    // 15. REPRODUCIR
     async play(userId: number, deviceId: string, uris: string[], contextUri?: string) {
         const token = await this.getUserToken(userId);
         try {
-            let body = {};
+            let body: any = {};
 
-            // Lógica:
-            // 1. Si es Playlist -> Usamos Contexto + Offset (Mejor para listas largas)
-            // 2. Si es Artista/Favoritos/Search -> Usamos la lista de URIs (Spotify no soporta offset en Artistas)
+            // ESCENARIO A: Reproducir un Contexto (Playlist o Album)
+            if (contextUri) {
+                body.context_uri = contextUri;
+
+                // --- CORRECCIÓN CRÍTICA AQUÍ ---
+                // Solo agregamos offset si hay elementos Y el primero es un string válido
+                if (Array.isArray(uris) && uris.length > 0 && typeof uris[0] === 'string' && uris[0].includes('spotify:track:')) {
+                    body.offset = { uri: uris[0] };
+                }
+                // Si uris es [] (vacío), NO agregamos 'offset'. 
+                // Así Spotify entiende: "Reproduce este álbum desde el principio".
+            } 
             
-            const isPlaylist = contextUri?.includes('playlist');
-
-            if (isPlaylist && uris.length === 1) {
-                // Modo Playlist: Contexto + Offset
-                body = {
-                    context_uri: contextUri,
-                    offset: { uri: uris[0] }
-                };
-            } else {
-                // Modo Lista (Artista/Favoritos/Search): Mandamos el array de canciones
-                // Spotify limita a unas 50 canciones por petición en el body, cortamos por seguridad
-                body = { uris: uris.slice(0, 50) };
+            // ESCENARIO B: Lista de canciones
+            else if (Array.isArray(uris) && uris.length > 0) {
+                body.uris = uris.slice(0, 50);
             }
+
+            console.log("Enviando a Spotify:", JSON.stringify(body, null, 2));
 
             await axios.put(`https://api.spotify.com/v1/me/player/play?device_id=${deviceId}`, 
                 body, 
@@ -323,7 +326,8 @@ export class SpotifyService {
             );
             return { success: true };
         } catch (error) {
-            console.error("Error al reproducir:", error.response?.data);
+            console.error("Error Spotify Play:", error.response?.data?.error || error.message)
+            // No lanzamos error fatal para que el frontend pueda intentar transferir el playback si falla
             throw new UnauthorizedException('No se pudo reproducir');
         }
     }
@@ -579,6 +583,68 @@ export class SpotifyService {
             return response.data.items;
         } catch (error) {
             return [];
+        }
+    }
+
+    // 31. OBTENER RECIÉN ESCUCHADO (Quick Access)
+    async getRecentlyPlayed(userId: number) {
+        const token = await this.getUserToken(userId);
+        try {
+            const response = await axios.get('https://api.spotify.com/v1/me/player/recently-played?limit=50', {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+
+            // LOGICA PARA FILTRAR DUPLICADOS Y EXTRAER CONTEXTOS
+            // Spotify devuelve canciones individuales. Nosotros queremos agrupar por "Contexto" (Album o Playlist)
+            const history = response.data.items;
+            const uniqueItems: any[] = [];
+            const seenUris = new Set();
+
+            for (const item of history) {
+                // El contexto es la Playlist o el Album desde donde sonó
+                const context = item.context; 
+                const track = item.track;
+
+                // Si no tiene contexto (ej. single suelto), usamos el álbum
+                const uri = context ? context.uri : track.album.uri;
+                const type = context ? context.type : 'album';
+                
+                // Si ya agregamos este contexto, lo saltamos
+                if (seenUris.has(uri)) continue;
+                seenUris.add(uri);
+
+                // IMPORTANTE: El endpoint de historial NO devuelve la foto de la playlist.
+                // Usamos la foto del álbum de la canción como "representación" visual.
+                uniqueItems.push({
+                    id: uri, // Usamos el URI como ID único
+                    name: context ? track.album.name : track.name, // Nombre representativo
+                    image: track.album.images[0]?.url,
+                    uri: uri,
+                    type: type
+                });
+
+                if (uniqueItems.length >= 7) break; // Solo queremos 7 (+1 de Liked Songs)
+            }
+
+            return uniqueItems;
+
+        } catch (error) {
+            console.error("Error historial", error);
+            return [];
+        }
+    }
+
+    // 29. OBTENER ÁLBUM
+    async getAlbum(userId: number, albumId: string) {
+        const token = await this.getUserToken(userId);
+        try {
+            const response = await axios.get(`https://api.spotify.com/v1/albums/${albumId}`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            return response.data;
+        } catch (error) {
+            console.error(error);
+            throw new UnauthorizedException('Error cargando álbum');
         }
     }
 }

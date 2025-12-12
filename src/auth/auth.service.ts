@@ -1,15 +1,61 @@
-import { Injectable, NotFoundException, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, BadRequestException, InternalServerErrorException  } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from 'src/prisma.service'; // Asegura que la ruta sea correcta
 import * as nodemailer from 'nodemailer';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 
 @Injectable()
 export class AuthService {
     constructor(
         private prisma: PrismaService,
         private jwtService: JwtService,
+        private configService: ConfigService
     ) { }
+
+    async refreshSpotifyToken(userId: number) {
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        
+        if (!user || !user.spotifyRefreshToken) {
+        throw new UnauthorizedException('No hay token de renovación disponible');
+        }
+
+        const clientId = this.configService.get<string>('SPOTIFY_CLIENT_ID');
+        const clientSecret = this.configService.get<string>('SPOTIFY_CLIENT_SECRET');
+        const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+
+        try {
+        const response = await axios.post('https://accounts.spotify.com/api/token', 
+            new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: user.spotifyRefreshToken,
+            }), {
+            headers: {
+                'Authorization': `Basic ${basicAuth}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+            }
+        );
+
+        const newAccessToken = response.data.access_token;
+        const newRefreshToken = response.data.refresh_token; 
+
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+            spotifyAccessToken: newAccessToken,
+            spotifyRefreshToken: newRefreshToken || user.spotifyRefreshToken
+            }
+        });
+
+        return { message: 'Token renovado', accessToken: newAccessToken };
+
+        } catch (error) {
+        console.error("Error renovando token:", error.response?.data || error.message);
+        throw new InternalServerErrorException('No se pudo renovar el token con Spotify');
+        }
+    }
 
 
     async forgotPassword(email: string) {

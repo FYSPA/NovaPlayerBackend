@@ -2,10 +2,13 @@ import { Controller, Get, Query, Req, UseGuards, Post, Body, Put, Delete } from 
 import { SpotifyService } from './spotify.service';
 import { AuthGuard } from '@nestjs/passport';
 import { Param } from '@nestjs/common';
+import { AuthService } from '../auth/auth.service';
 
 @Controller('spotify')
 export class SpotifyController {
-    constructor(private readonly spotifyService: SpotifyService) { }
+    constructor(
+        private readonly spotifyService: SpotifyService
+    ) { }
 
     // CORRECCIÓN 1: Agrega ('jwt') dentro de AuthGuard
     @UseGuards(AuthGuard('jwt'))
@@ -193,4 +196,17 @@ export class SpotifyController {
     async getPublicPlaylists(@Req() req, @Param('id') id: string) {
         return this.spotifyService.getUserPublicPlaylists(req.user.userId, id);
     }
+
+    @UseGuards(AuthGuard('jwt'))
+    @Get('recently-played')
+    async getRecentlyPlayed(@Req() req) {
+        return this.spotifyService.getRecentlyPlayed(req.user.userId);
+    }
+
+    @UseGuards(AuthGuard('jwt'))
+    @Get('album/:id')
+    async getAlbum(@Req() req, @Param('id') id: string) {
+        return this.spotifyService.getAlbum(req.user.userId, id);
+    }
+
 }

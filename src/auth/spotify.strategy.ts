@@ -20,15 +20,16 @@ export class SpotifyStrategy extends PassportStrategy(Strategy, 'spotify') {
         'user-library-modify',
         'playlist-modify-public',
         'playlist-modify-private',
-        'playlist-read-private', // <--- IMPORTANTE PARA VER TUS PLAYLISTS
+        'playlist-read-private',
         'playlist-read-collaborative',
         'ugc-image-upload',
         'user-follow-read',
         'user-follow-modify',
-        'streaming',                 // <--- IMPORTANTE PARA EL PLAYER
-        'user-read-playback-state',  // <--- IMPORTANTE PARA EL PLAYER
-        'user-modify-playback-state',// <--- IMPORTANTE PARA EL PLAYER
-        'user-read-currently-playing'// <--- IMPORTANTE PARA EL PLAYER
+        'streaming',
+        'user-read-playback-state',  
+        'user-modify-playback-state',
+        'user-read-currently-playing',
+        'user-read-recently-played',
       ],
       showDialog: true, 
     });

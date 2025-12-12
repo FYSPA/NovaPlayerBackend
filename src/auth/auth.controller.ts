@@ -54,4 +54,10 @@ export class AuthController {
         // Llamamos a Prisma para buscar los datos frescos
         return this.authService.getUserProfile(req.user.userId);
     }
+    @UseGuards(AuthGuard('jwt'))
+    @Post('refresh-spotify')
+    async refreshSpotify(@Req() req) {
+        // Aquí 'this.authService' funcionará perfectamente
+        return this.authService.refreshSpotifyToken(req.user.userId);
+    }
 }
