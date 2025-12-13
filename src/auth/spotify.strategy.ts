@@ -5,10 +5,9 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class SpotifyStrategy extends PassportStrategy(Strategy, 'spotify') {
-  // 2. INYECTAR EL SERVICIO EN EL CONSTRUCTOR
+
   constructor(configService: ConfigService) {
     super({
-      // 3. USAR configService.get() EN LUGAR DE process.env
       clientID: configService.get<string>('SPOTIFY_CLIENT_ID') || '',
       clientSecret: configService.get<string>('SPOTIFY_CLIENT_SECRET') || '',
       callbackURL: 'http://127.0.0.1:9000/auth/spotify/callback',

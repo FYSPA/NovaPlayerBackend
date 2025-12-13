@@ -209,4 +209,23 @@ export class SpotifyController {
         return this.spotifyService.getAlbum(req.user.userId, id);
     }
 
+    @UseGuards(AuthGuard('jwt'))
+    @Get('browse/categories') 
+    async getCategories(@Req() req) {
+        return this.spotifyService.getCategories(req.user.userId);
+    }
+
+    // --- 2. ESTE ES PARA CUANDO ENTRAS A UN GÉNERO (LAS PLAYLISTS) ---
+    @UseGuards(AuthGuard('jwt'))
+    @Get('category/:id/playlists')
+    async getCategoryPlaylists(@Req() req, @Param('id') id: string) {
+        return this.spotifyService.getCategoryPlaylists(req.user.userId, id);
+    }
+
+    // Nuevo endpoint para obtener canciones de una categoría
+    @UseGuards(AuthGuard('jwt'))
+    @Get('category/:id/tracks') 
+    async getCategoryTracks(@Req() req, @Param('id') id: string) {
+        return this.spotifyService.getCategoryTracks(req.user.userId, id);
+    }
 }

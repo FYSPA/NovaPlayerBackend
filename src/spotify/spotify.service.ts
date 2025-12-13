@@ -4,6 +4,9 @@ import axios from 'axios';
 import ytSearch from 'yt-search';
 @Injectable()
 export class SpotifyService {
+    private categoriesCache: any = null;
+    private lastCategoriesFetch: number = 0;
+    private readonly CACHE_DURATION = 60 * 60 * 1000; 
     constructor(
         private prisma: PrismaService
     ) { }
@@ -634,7 +637,7 @@ export class SpotifyService {
         }
     }
 
-    // 29. OBTENER ÁLBUM
+    // 32. OBTENER ÁLBUM
     async getAlbum(userId: number, albumId: string) {
         const token = await this.getUserToken(userId);
         try {
@@ -645,6 +648,187 @@ export class SpotifyService {
         } catch (error) {
             console.error(error);
             throw new UnauthorizedException('Error cargando álbum');
+        }
+    }
+
+    // 33. OBTENER CATEGORÍAS DE SPOTIFY
+     async getCategories(userId: number) {
+        // A. REVISAMOS SI YA TENEMOS DATOS GUARDADOS Y SI SON RECIENTES
+        const now = Date.now();
+        if (this.categoriesCache && (now - this.lastCategoriesFetch < this.CACHE_DURATION)) {
+            console.log("Devolviendo categorías desde caché (sin llamar a Spotify)");
+            return this.categoriesCache;
+        }
+
+        const token = await this.getUserToken(userId);
+        // Usamos tu función de región
+        const country = await this.getUserRegion(token); 
+
+        try {
+            // B. SI NO HAY CACHÉ, LLAMAMOS A SPOTIFY
+            const response = await axios.get('https://api.spotify.com/v1/browse/categories', {
+                headers: { Authorization: `Bearer ${token}` },
+                params: { 
+                    limit: 20,
+                    country: country,
+                    locale: 'es_ES'
+                }
+            });
+
+            // C. GUARDAMOS EL RESULTADO EN MEMORIA
+            this.categoriesCache = response.data;
+            this.lastCategoriesFetch = now;
+
+            return response.data;
+
+        } catch (error: any) {
+            console.error("Error obteniendo categorías:", error.message);
+            
+            // Si nos da error 429, intentamos devolver el caché viejo si existe
+            if (error.response?.status === 429 && this.categoriesCache) {
+                console.warn("Spotify límite excedido. Usando caché antigua.");
+                return this.categoriesCache;
+            }
+
+            return { categories: { items: [] } };
+        }
+    }
+
+    
+    // 34. OBTENER PLAYLISTS DE UNA CATEGORÍA
+    async getCategoryPlaylists(userId: number, categoryId: string) {
+        const token = await this.getUserToken(userId);
+        const country = await this.getUserRegion(token); 
+
+        try {
+            // Intentamos pedir las playlists con el país específico
+            const response = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}/playlists`, {
+                headers: { Authorization: `Bearer ${token}` },
+                params: { 
+                    limit: 20,
+                    country: country 
+                }
+            });
+            return response.data.playlists.items;
+        } catch (error: any) {
+            // --- AQUÍ ESTÁ EL TRUCO ---
+            
+            // Si el error es 404, significa que esa categoría no tiene playlists en ese país.
+            // Devolvemos array vacío y NO lanzamos error.
+            if (error.response && error.response.status === 404) {
+                console.warn(`La categoría ${categoryId} no tiene playlists en ${country}. Retornando vacío.`);
+                return []; 
+            }
+
+            // Si es otro error (token inválido, servidor caído), lo mostramos en consola
+            console.error(`Error cargando playlists de categoría ${categoryId}:`, error.message);
+            return [];
+        }
+    }
+
+    // 35. OBTENER CANCIONES DE UNA CATEGORÍA
+    async getCategoryTracks(userId: number, categoryId: string) {
+        const token = await this.getUserToken(userId);
+        const country = await this.getUserRegion(token);
+
+        // Variable para acumular resultados
+        let tracks: any[] = [];
+        let categoryName = categoryId;
+
+        try {
+            // --- PASO 1: OBTENER NOMBRE REAL DE LA CATEGORÍA ---
+            try {
+                const catDetails = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { country, locale: 'es_ES' }
+                });
+                categoryName = catDetails.data.name;
+            } catch (e) {
+                // Si falla, seguimos con el ID, no pasa nada
+            }
+
+            // --- PLAN A: BÚSQUEDA DIRECTA DE CANCIONES (Track Search) ---
+            try {
+                const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: {
+                        q: `genre:"${categoryName}" OR "${categoryName}"`, 
+                        type: 'track',
+                        limit: 50,
+                        market: country
+                    }
+                });
+                tracks = searchResponse.data.tracks.items || [];
+            } catch (e) { console.log("Plan A (Search tracks) falló."); }
+
+            // Si el Plan A dio resultados decentes, retornamos ya.
+            if (tracks.length >= 5) {
+                return tracks;
+            }
+
+            // --- SI LLEGAMOS AQUÍ, NECESITAMOS REFUERZOS ---
+            console.log(`Pocas canciones (${tracks.length}) para "${categoryName}". Activando planes de respaldo...`);
+
+            let targetPlaylistId = null;
+
+            // --- PLAN B: INTENTAR OBTENER PLAYLISTS OFICIALES DE LA CATEGORÍA ---
+            try {
+                const playlistsResponse = await axios.get(`https://api.spotify.com/v1/browse/categories/${categoryId}/playlists`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { country, limit: 1 }
+                });
+                if (playlistsResponse.data.playlists.items.length > 0) {
+                    targetPlaylistId = playlistsResponse.data.playlists.items[0].id;
+                }
+            } catch (error: any) {
+                // Aquí atrapamos el 404 maldito
+                if (error.response && error.response.status === 404) {
+                    console.warn(`Plan B falló: La categoría ${categoryId} no tiene endpoint de playlists público.`);
+                }
+            }
+
+            // --- PLAN C: SI EL PLAN B FALLÓ (404), BUSCAMOS UNA PLAYLIST POR NOMBRE ---
+            if (!targetPlaylistId) {
+                console.log("Activando Plan C: Buscando playlist por nombre...");
+                try {
+                    const playlistSearch = await axios.get('https://api.spotify.com/v1/search', {
+                        headers: { Authorization: `Bearer ${token}` },
+                        params: {
+                            q: categoryName, // Buscamos "El 2025 en música" como texto
+                            type: 'playlist',
+                            limit: 1,
+                            market: country
+                        }
+                    });
+                    if (playlistSearch.data.playlists.items.length > 0) {
+                        targetPlaylistId = playlistSearch.data.playlists.items[0].id;
+                    }
+                } catch (e) { console.log("Plan C también falló."); }
+            }
+
+            // --- EJECUCIÓN FINAL: SI TENEMOS UN ID DE PLAYLIST (DEL PLAN B O C) ---
+            if (targetPlaylistId) {
+                try {
+                    const tracksResponse = await axios.get(`https://api.spotify.com/v1/playlists/${targetPlaylistId}/tracks`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                        params: { limit: 50, market: country }
+                    });
+                    
+                    // Mapeamos para sacar el objeto track limpio
+                    const newTracks = tracksResponse.data.items
+                        .map((item: any) => item.track)
+                        .filter((t: any) => t && t.id);
+                    
+                    return newTracks;
+                } catch (e) { console.error("Error extrayendo canciones de la playlist encontrada."); }
+            }
+
+            // Si todo falló, devolvemos lo que sea que hayamos encontrado en el Plan A (aunque sea poco)
+            return tracks;
+
+        } catch (error) {
+            console.error(`Error crítico en getCategoryTracks:`, error);
+            return [];
         }
     }
 }
