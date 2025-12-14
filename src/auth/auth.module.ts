@@ -7,11 +7,13 @@ import { PassportModule } from '@nestjs/passport';
 import { SpotifyStrategy } from './spotify.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { ConfigModule } from '@nestjs/config';
+import { SpotifyModule } from 'src/spotify/spotify.module';
 
 @Module({
   imports: [
     ConfigModule,
     PassportModule,
+    SpotifyModule,
     JwtModule.register({
       global: true,
       secret: process.env.JWT_SECRET || 'SECRETO_SUPER_SEGURO', 

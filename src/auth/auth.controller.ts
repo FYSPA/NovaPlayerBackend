@@ -2,17 +2,23 @@ import { Controller, Get, UseGuards, Req, Res, Post, HttpCode, HttpStatus, Body 
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
 import express from 'express';
-
+import { SpotifyService } from '../spotify/spotify.service';
+import { Throttle } from '@nestjs/throttler'; 
+import { LoginDto } from './dto/login.dto'; 
 
 @Controller('auth')
 export class AuthController {
-    constructor(private authService: AuthService) { }
+    constructor(
+        private authService: AuthService,
+        private readonly spotifyService: SpotifyService
+    ) { }
 
-    @HttpCode(HttpStatus.OK)
+    @Throttle({ default: { limit: 5, ttl: 60000 } }) 
     @Post('login')
-    login(@Body() signInDto: Record<string, any>) {
-        return this.authService.login(signInDto.email, signInDto.password);
+    async login(@Body() loginDto: LoginDto) {
+        return this.authService.login(loginDto.email, loginDto.password);
     }
+
 
     @Post('forgot-password')
     async forgotPassword(@Body() body: { email: string }) {
@@ -54,10 +60,17 @@ export class AuthController {
         // Llamamos a Prisma para buscar los datos frescos
         return this.authService.getUserProfile(req.user.userId);
     }
+    
     @UseGuards(AuthGuard('jwt'))
     @Post('refresh-spotify')
-    async refreshSpotify(@Req() req) {
-        // Aquí 'this.authService' funcionará perfectamente
-        return this.authService.refreshSpotifyToken(req.user.userId);
+    async refreshSpotifyToken(@Req() req) {
+        console.log(`🔄 Frontend solicitó renovación manual para usuario ${req.user.userId}`);
+        
+        const accessToken = await this.spotifyService.refreshSpotifyToken(req.user.userId);
+        
+        // Devolvemos el token en un objeto JSON
+        return { accessToken };
     }
+
+    
 }
