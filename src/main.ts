@@ -26,8 +26,8 @@ async function bootstrap() {
     transform: true,            
   }));
 
-  const port = process.env.PORT || 9000;
-  await app.listen(port);
-  console.log(`🚀 NovaPlayer Backend Server on http://localhost:${port}`);
+  //const port = process.env.PORT || 9000;
+  await app.listen(process.env.PORT || 9000, '0.0.0.0');
+  //console.log(`🚀 NovaPlayer Backend Server on http://localhost:${port}`);
 }
 bootstrap();
