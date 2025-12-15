@@ -47,10 +47,8 @@ export class AuthController {
         // Generamos el JWT de nuestra app
         const jwt = await this.authService.generateJwt(user);
 
-        // 3. REDIRECCIÓN AL FRONTEND
-        // Como el backend no puede guardar en localStorage del front,
-        // redirigimos al front pasando el token en la URL.
-        res.redirect(`http://localhost:3001/callback?token=${jwt.access_token}`);
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        res.redirect(`${frontendUrl}/api/auth/callback?token=${jwt.access_token}`);
     }
 
     @UseGuards(AuthGuard('jwt'))
