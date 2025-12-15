@@ -228,4 +228,10 @@ export class SpotifyController {
     async getCategoryTracks(@Req() req, @Param('id') id: string) {
         return this.spotifyService.getCategoryTracks(req.user.userId, id);
     }
+
+    @UseGuards(AuthGuard('jwt'))
+    @Get('queue')
+    async getQueue(@Req() req) {
+        return this.spotifyService.getQueue(req.user.userId);
+    }
 }

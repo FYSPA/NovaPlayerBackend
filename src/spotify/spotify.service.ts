@@ -403,6 +403,17 @@ export class SpotifyService {
         } catch { return []; }
     }
 
+    async getQueue(userId: number) {
+        try {
+            // Cambiamos el último parámetro de '0' a '1' para permitir 1 intento de renovación
+            const data: any = await this.request(userId, 'GET', '/me/player/queue', {}, null, {}, 1);
+            return data;
+        } catch (error: any) {
+            console.error("❌ ERROR QUEUE:", error.response?.data || error.message);
+            return { queue: [] };
+        }
+    }
+
     // ==============================================================================
     // 4. MÉTODOS PRIVADOS DE SOPORTE
     // ==============================================================================
@@ -450,4 +461,6 @@ export class SpotifyService {
             } catch { return 'US'; }
         });
     }
+
+    
 }
