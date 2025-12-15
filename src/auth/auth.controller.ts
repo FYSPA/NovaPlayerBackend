@@ -48,7 +48,7 @@ export class AuthController {
         const jwt = await this.authService.generateJwt(user);
 
         const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-        res.redirect(`${frontendUrl}/api/auth/callback?token=${jwt.access_token}`);
+        res.redirect(`${frontendUrl}/callback?token=${jwt.access_token}`);
     }
 
     @UseGuards(AuthGuard('jwt'))
